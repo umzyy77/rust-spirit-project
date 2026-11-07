@@ -5,28 +5,28 @@ use crate::position::Position;
 
 pub const SIZE: f64 = 50.0;
 /// Pixels par seconde
-const SPEED: f64 = 250.0; 
+const SPEED: f64 = 250.0;
 
 /// Rouge, vert, bleu, alpha — chaque composante entre 0.0 et 1.0.
 pub type Color = [f32; 4];
 
-pub struct Square {
+pub struct Entity {
     position: Position,
     pub color: Color,
     moving: HashSet<Direction>
 }
 
-impl Square {
-    /// Crée un carré immobile à la position `(x, y)`.
+impl Entity {
+    /// Crée une entité immobile à la position `(x, y)`.
     pub fn new(x: f64, y: f64, color: Color) -> Self {
-        Square {
+        Entity {
             position: Position::new(x, y),
             color,
             moving: HashSet::new()
         }
     }
 
-    /// Position actuelle du carré.
+    /// Position actuelle de l'entité.
     pub fn position(&self) -> Position {
         self.position
     }
@@ -40,10 +40,10 @@ impl Square {
         }
     }
 
-    /// Avance le carré de `dt` secondes selon les directions actives, en
+    /// Avance l'entité de `dt` secondes selon les directions actives, en
     /// restant dans les limites `bounds` (largeur, hauteur). Le déplacement
-    /// est résolu axe par axe : sur chaque axe, s'il croiserait un autre
-    /// carré de `positions` (la sienne exclue, via `other != self.position`),
+    /// est résolu axe par axe : sur chaque axe, s'il croiserait une autre
+    /// entité de `positions` (la sienne exclue, via `other != self.position`),
     /// il est raccourci pour s'arrêter exactement au contact plutôt que
     /// d'être annulé en bloc.
     pub fn update(&mut self, dt: f64, bounds: (f64, f64), positions: &[Position]) {
@@ -72,7 +72,7 @@ impl Square {
     }
 
     /// Nouvelle position sur un axe après un déplacement de `delta`,
-    /// raccourcie pour s'arrêter au contact d'un carré de `others` dont la
+    /// raccourcie pour s'arrêter au contact d'une entité de `others` dont la
     /// bande perpendiculaire chevauche la sienne. `moving_of`/`perp_of`
     /// extraient, pour une `Position` donnée, la coordonnée sur l'axe qui
     /// bouge et celle sur l'axe perpendiculaire — `(|p| p.x(), |p| p.y())`

@@ -4,19 +4,19 @@ use crate::direction::Direction;
 
 /// Nombre de lettres de l'alphabet (A-Z).
 const ALPHABET_SIZE: usize = 26;
-/// Nombre de touches à fournir par carré : une par direction existante.
+/// Nombre de touches à fournir par entité : une par direction existante.
 pub const LETTERS_PER_GROUP: usize = Direction::ALL.len();
-/// Nombre maximal de carrés constructibles : au-delà, il ne reste plus assez
+/// Nombre maximal d'entités constructibles : au-delà, il ne reste plus assez
 /// de lettres uniques pour former un nouveau groupe sans réutiliser une
 /// touche déjà prise (cf. la règle "aucune touche répétée" plus bas).
-pub const MAX_SQUARES: usize = ALPHABET_SIZE / LETTERS_PER_GROUP;
+pub const MAX_ENTITIES: usize = ALPHABET_SIZE / LETTERS_PER_GROUP;
 
 /// Une suite de lettres validée — l'ordre des lettres est celui de
 /// `Direction::ALL`.
 pub type ControlGroup = [char; LETTERS_PER_GROUP];
 
 /// Transforme les arguments bruts de la ligne de commande (sans le nom du
-/// programme) en suites de touches validées — une par carré à créer.
+/// programme) en suites de touches validées — une par entité à créer.
 ///
 /// Règles de validité :
 /// - il faut au moins une suite de 4 lettres ;

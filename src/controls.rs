@@ -5,12 +5,12 @@ use piston_window::Key;
 use crate::config::ControlGroup;
 use crate::direction::Direction;
 
-/// Construit la table "touche → (indice du carré, direction)" à partir des
-/// groupes de touches déjà validés par `config::parse_args`. L'indice vient
-/// de la position dans `groups` (via `.enumerate()`), donc il correspond
-/// toujours exactement à la position du carré construit à partir du même
-/// `groups` dans `main.rs` : pas de chiffre écrit à la main, pas de
-/// désynchronisation possible.
+/// Construit la table "touche → (indice de l'entité, direction)" à partir
+/// des groupes de touches déjà validés par `config::parse_args`. L'indice
+/// vient de la position dans `groups` (via `.enumerate()`), donc il
+/// correspond toujours exactement à la position de l'entité construite à
+/// partir du même `groups` dans `main.rs` : pas de chiffre écrit à la main,
+/// pas de désynchronisation possible.
 pub fn build_bindings(groups: &[ControlGroup]) -> HashMap<Key, (usize, Direction)> {
     let mut bindings = HashMap::new();
 
@@ -23,7 +23,7 @@ pub fn build_bindings(groups: &[ControlGroup]) -> HashMap<Key, (usize, Direction
     bindings
 }
 
-/// Interprète `key` : renvoie l'indice du carré concerné et la direction
+/// Interprète `key` : renvoie l'indice de l'entité concernée et la direction
 /// associée, si cette touche fait partie des `bindings`.
 pub fn resolve(key: Key, bindings: &HashMap<Key, (usize, Direction)>) -> Option<(usize, Direction)> {
     bindings.get(&key).copied()

@@ -1,7 +1,7 @@
-use crate::config::{ControlGroup, MAX_SQUARES};
-use crate::square::{Color, Square, SIZE};
+use crate::config::{ControlGroup, MAX_ENTITIES};
+use crate::entity::{Color, Entity, SIZE};
 
-const COLORS: [Color; MAX_SQUARES] = [
+const COLORS: [Color; MAX_ENTITIES] = [
     [0.90, 0.25, 0.25, 1.0], // rouge
     [0.25, 0.55, 0.90, 1.0], // bleu
     [0.30, 0.80, 0.35, 1.0], // vert
@@ -10,11 +10,11 @@ const COLORS: [Color; MAX_SQUARES] = [
     [0.95, 0.55, 0.20, 1.0], // orange
 ];
 
-/// Un carré par groupe de touches validé, répartis sur la largeur de la
+/// Une entité par groupe de touches validé, réparties sur la largeur de la
 /// fenêtre (`width`/`height`). Même source (`groups`) que
-/// `controls::build_bindings`, donc `squares.len() == groups.len()` par
+/// `controls::build_bindings`, donc `entities.len() == groups.len()` par
 /// construction.
-pub fn build_squares(groups: &[ControlGroup], width: f64, height: f64) -> Vec<Square> {
+pub fn build_entities(groups: &[ControlGroup], width: f64, height: f64) -> Vec<Entity> {
     let count = groups.len();
     let y = (height - SIZE) / 2.0;
 
@@ -26,7 +26,7 @@ pub fn build_squares(groups: &[ControlGroup], width: f64, height: f64) -> Vec<Sq
                 let step = (width - SIZE) / (count - 1) as f64;
                 i as f64 * step
             };
-            Square::new(x, y, COLORS[i % COLORS.len()])
+            Entity::new(x, y, COLORS[i % COLORS.len()])
         })
         .collect()
 }
