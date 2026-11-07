@@ -43,8 +43,9 @@ fn main() {
         }
 
         if let Some(update) = event.update_args() {
+            let positions: Vec<_> = squares.iter().map(|s| s.position()).collect();
             for square in squares.iter_mut() {
-                square.update(update.dt, (WIDTH, HEIGHT));
+                square.update(update.dt, (WIDTH, HEIGHT), &positions);
             }
         }
 
@@ -53,7 +54,7 @@ fn main() {
             for square in &squares {
                 rectangle(
                     square.color,
-                    [square.position.x, square.position.y, SIZE, SIZE],
+                    [square.position().x(), square.position().y(), SIZE, SIZE],
                     context.transform,
                     graphics,
                 );

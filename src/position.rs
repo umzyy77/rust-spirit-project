@@ -1,6 +1,7 @@
+#[derive(Clone, Copy, PartialEq)]
 pub struct Position {
-    pub x: f64,
-    pub y: f64,
+    x: f64,
+    y: f64,
 }
 
 impl Position {
@@ -9,15 +10,13 @@ impl Position {
         Position { x, y }
     }
 
-    /// Déplace la position de `dx` sur x et `dy` sur y.
-    pub fn translate(&mut self, dx: f64, dy: f64) {
-        self.x += dx;
-        self.y += dy;
+    /// Coordonnée x.
+    pub fn x(&self) -> f64 {
+        self.x
     }
 
-    /// Borne `x` à `[0, max_x]` et `y` à `[0, max_y]`.
-    pub fn clamp(&mut self, max_x: f64, max_y: f64) {
-        self.x = self.x.clamp(0.0, max_x);
-        self.y = self.y.clamp(0.0, max_y);
+    /// Coordonnée y.
+    pub fn y(&self) -> f64 {
+        self.y
     }
 }
