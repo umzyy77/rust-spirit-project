@@ -43,16 +43,19 @@ pub fn parse_args(args: &[String]) -> Result<Vec<ControlGroup>, String> {
             ));
         }
 
-        let mut group: ControlGroup = ['\0'; LETTERS_PER_GROUP];
-        for (i, c) in letters.iter().enumerate() {
+        let mut uppercased = Vec::with_capacity(LETTERS_PER_GROUP);
+        for c in &letters {
             let upper = c.to_ascii_uppercase();
             if !seen_letters.insert(upper) {
                 return Err(format!(
                     "La touche '{upper}' est utilisée plusieurs fois. Chaque touche ne doit contrôler qu'une seule direction."
                 ));
             }
-            group[i] = upper;
+            uppercased.push(upper);
         }
+
+        // `unwrap` sûr : `uppercased.len() == LETTERS_PER_GROUP`, vérifié plus haut.
+        let group: ControlGroup = uppercased.try_into().unwrap();
         groups.push(group);
     }
 
