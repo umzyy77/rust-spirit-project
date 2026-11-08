@@ -1,64 +1,39 @@
 use std::collections::HashSet;
 
-use crate::actors::{Builder, Square, SHAPES};
 use crate::direction::Direction;
+use crate::shape::Shape;
 
-/// Nombre de lettres de l'alphabet (A-Z).
 const ALPHABET_SIZE: usize = 26;
-/// Nombre de touches à fournir par entité : une par direction existante.
-pub const LETTERS_PER_GROUP: usize = Direction::ALL.len();
-/// Nombre maximal d'entités constructibles : au-delà, il ne reste plus assez
-/// de lettres uniques pour former un nouveau groupe sans réutiliser une
-/// touche déjà prise (cf. la règle "aucune touche répétée" plus bas).
-pub const MAX_ENTITIES: usize = ALPHABET_SIZE / LETTERS_PER_GROUP;
+/// Une touche par direction existante.
+pub const KEYS_PER_ENTITY: usize = Direction::ALL.len();
+/// Au-delà, il ne reste plus assez de lettres uniques pour un nouveau groupe.
+pub const MAX_ENTITIES: usize = ALPHABET_SIZE / KEYS_PER_ENTITY;
 
-/// Une suite de lettres validée — l'ordre des lettres est celui de
-/// `Direction::ALL`.
-pub type ControlGroup = [char; LETTERS_PER_GROUP];
+/// Les touches d'une entité, dans l'ordre de `Direction::ALL`.
+pub type ControlGroup = [char; KEYS_PER_ENTITY];
 
-/// Constructeur par défaut quand l'argument ne précise pas de forme.
-const DEFAULT_SHAPE: Builder = Square::boxed;
-
-/// Trouve le constructeur associé à `name` dans `actors::SHAPES`, insensible
-/// à la casse.
-fn find_shape(name: &str) -> Option<Builder> {
-    SHAPES
-        .iter()
-        .find(|(key, _)| key.eq_ignore_ascii_case(name))
-        .map(|&(_, build)| build)
-}
-
-/// Touches + constructeur de forme d'une entité, issus d'un seul argument de
-/// ligne de commande. Pas de `PartialEq`/`Debug` dérivés : comparer des
-/// pointeurs de fonction n'est pas fiable (l'optimiseur peut fusionner deux
-/// fonctions identiques et les rendre "égales" par erreur).
+/// La configuration d'une entité, déduite d'un seul argument de ligne de commande.
 #[derive(Clone, Copy)]
 pub struct EntityConfig {
     pub keys: ControlGroup,
-    pub build: Builder,
+    pub shape: Shape,
 }
 
-/// Transforme les arguments bruts de la ligne de commande (sans le nom du
-/// programme) en configurations validées — une par entité à créer.
+/// Transforme les arguments de la ligne de commande (sans le nom du
+/// programme) en une configuration par entité à créer.
 ///
-/// Chaque argument est `LETTRES` ou `LETTRES:forme` (`forme` = `circle` ou
-/// `square`, insensible à la casse ; `square` par défaut si omis).
-///
-/// Règles de validité :
-/// - il faut au moins un argument ;
-/// - la partie lettres doit faire exactement 4 lettres alphabétiques (A-Z) ;
-/// - aucune lettre ne doit apparaître deux fois, ni dans un même groupe, ni
-///   entre deux groupes différents ;
-/// - la forme, si précisée, doit être `circle` ou `square`.
+/// Chaque argument a la forme `LETTRES` ou `LETTRES:forme`, où `LETTRES` est
+/// une suite d'exactement `KEYS_PER_ENTITY` lettres (A-Z, insensible à la
+/// casse, aucune répétée sur l'ensemble des arguments) et `forme` vaut
+/// `circle` ou `square` (`square` par défaut si omis).
 pub fn parse_args(args: &[String]) -> Result<Vec<EntityConfig>, String> {
     if args.is_empty() {
-        return Err(
-            "Aucune entité à créer. Usage : squares.exe AZER QSDF:circle WXCV (une suite de 4 lettres par entité, suivie en option de \":circle\" ou \":square\" — carré par défaut)."
-                .to_string(),
-        );
+        return Err(format!(
+            "Aucune entité à créer. Usage : squares.exe AZER QSDF:circle WXCV (une suite de {KEYS_PER_ENTITY} lettres par entité, suivie en option de \":circle\" ou \":square\" — carré par défaut)."
+        ));
     }
 
-    let mut seen_letters = HashSet::new();
+    let mut seen_keys = HashSet::new();
     let mut configs = Vec::with_capacity(args.len());
 
     for arg in args {
@@ -68,34 +43,30 @@ pub fn parse_args(args: &[String]) -> Result<Vec<EntityConfig>, String> {
         };
 
         let letters: Vec<char> = letters_part.chars().collect();
-
-        if letters.len() != LETTERS_PER_GROUP || !letters.iter().all(|c| c.is_ascii_alphabetic()) {
+        if letters.len() != KEYS_PER_ENTITY || !letters.iter().all(char::is_ascii_alphabetic) {
             return Err(format!(
-                "Argument invalide : \"{arg}\". Chaque entité doit être décrite par exactement {LETTERS_PER_GROUP} lettres (A-Z), suivies en option de \":circle\" ou \":square\"."
+                "Argument invalide : \"{arg}\". Chaque entité doit être décrite par exactement {KEYS_PER_ENTITY} lettres (A-Z), suivies en option de \":circle\" ou \":square\"."
             ));
         }
 
-        let build = match shape_part {
-            None => DEFAULT_SHAPE,
-            Some(name) => find_shape(name).ok_or_else(|| {
-                format!("Forme inconnue : \"{name}\". Utilise \"circle\" ou \"square\" (carré par défaut).")
-            })?,
+        let shape = match shape_part {
+            None => Shape::ALL[0],
+            Some(name) => Shape::from_name(name)
+                .ok_or_else(|| format!("Forme inconnue : \"{name}\". Utilise \"circle\" ou \"square\" (carré par défaut)."))?,
         };
 
-        let mut uppercased = Vec::with_capacity(LETTERS_PER_GROUP);
-        for c in &letters {
-            let upper = c.to_ascii_uppercase();
-            if !seen_letters.insert(upper) {
+        let mut keys = [' '; KEYS_PER_ENTITY];
+        for (slot, letter) in keys.iter_mut().zip(&letters) {
+            let key = letter.to_ascii_uppercase();
+            if !seen_keys.insert(key) {
                 return Err(format!(
-                    "La touche '{upper}' est utilisée plusieurs fois. Chaque touche ne doit contrôler qu'une seule direction."
+                    "La touche '{key}' est utilisée plusieurs fois. Chaque touche ne doit contrôler qu'une seule direction."
                 ));
             }
-            uppercased.push(upper);
+            *slot = key;
         }
 
-        // `unwrap` sûr : `uppercased.len() == LETTERS_PER_GROUP`, vérifié plus haut.
-        let keys: ControlGroup = uppercased.try_into().unwrap();
-        configs.push(EntityConfig { keys, build });
+        configs.push(EntityConfig { keys, shape });
     }
 
     Ok(configs)
@@ -113,10 +84,7 @@ mod tests {
     fn accepte_un_appel_valide() {
         let result = parse_args(&args(&["AZER", "QSDF", "WXCV"])).unwrap();
         let keys: Vec<ControlGroup> = result.iter().map(|c| c.keys).collect();
-        assert_eq!(
-            keys,
-            vec![['A', 'Z', 'E', 'R'], ['Q', 'S', 'D', 'F'], ['W', 'X', 'C', 'V']]
-        );
+        assert_eq!(keys, vec![['A', 'Z', 'E', 'R'], ['Q', 'S', 'D', 'F'], ['W', 'X', 'C', 'V']]);
     }
 
     #[test]
@@ -149,5 +117,16 @@ mod tests {
     fn est_insensible_a_la_casse() {
         let result = parse_args(&args(&["azer"])).unwrap();
         assert_eq!(result[0].keys, ['A', 'Z', 'E', 'R']);
+    }
+
+    #[test]
+    fn accepte_une_forme_explicite_et_insensible_a_la_casse() {
+        let result = parse_args(&args(&["AZER:Circle"])).unwrap();
+        assert_eq!(result[0].shape, Shape::Circle);
+    }
+
+    #[test]
+    fn refuse_une_forme_inconnue() {
+        assert!(parse_args(&args(&["AZER:triangle"])).is_err());
     }
 }
