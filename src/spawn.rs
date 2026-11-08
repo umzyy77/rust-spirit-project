@@ -26,7 +26,7 @@ pub fn build_squares(groups: &[ControlGroup], width: f64, height: f64) -> Vec<Sq
                 let step = (width - SIZE) / (count - 1) as f64;
                 i as f64 * step
             };
-            Square::new(x, y, COLORS[i])
+            Square::new(x, y, COLORS[i % COLORS.len()])
         })
         .collect()
 }
