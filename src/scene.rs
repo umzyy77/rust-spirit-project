@@ -92,4 +92,7 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
             Controls::new(entity.keys),
         ));
     }
+
+    // Ressource utile uniquement pour ce spawn initial.
+    commands.remove_resource::<Configs>();
 }
