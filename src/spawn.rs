@@ -1,5 +1,6 @@
-use crate::config::{ControlGroup, MAX_ENTITIES};
-use crate::entity::{Color, Entity, SIZE};
+use crate::actors::Actor;
+use crate::config::{EntityConfig, MAX_ENTITIES};
+use crate::entity::Color;
 
 const COLORS: [Color; MAX_ENTITIES] = [
     [0.90, 0.25, 0.25, 1.0], // rouge
@@ -10,23 +11,26 @@ const COLORS: [Color; MAX_ENTITIES] = [
     [0.95, 0.55, 0.20, 1.0], // orange
 ];
 
-/// Une entité par groupe de touches validé, réparties sur la largeur de la
-/// fenêtre (`width`/`height`). Même source (`groups`) que
-/// `controls::build_bindings`, donc `entities.len() == groups.len()` par
-/// construction.
-pub fn build_entities(groups: &[ControlGroup], width: f64, height: f64) -> Vec<Entity> {
-    let count = groups.len();
-    let y = (height - SIZE) / 2.0;
+/// Demi-largeur (ou rayon) des entités créées par `build_entities`.
+const HALF_SIZE: f64 = 25.0;
+
+/// Une entité par configuration validée, réparties sur la largeur de la
+/// fenêtre, position = centre. `config.build` sait déjà quel `Actor`
+/// construire, aucune distinction carré/cercle ici.
+pub fn build_entities(configs: &[EntityConfig], width: f64, height: f64) -> Vec<Box<dyn Actor>> {
+    let count = configs.len();
+    let size = HALF_SIZE * 2.0;
+    let y = height / 2.0;
 
     (0..count)
         .map(|i| {
             let x = if count == 1 {
-                (width - SIZE) / 2.0
+                width / 2.0
             } else {
-                let step = (width - SIZE) / (count - 1) as f64;
-                i as f64 * step
+                let step = (width - size) / (count - 1) as f64;
+                HALF_SIZE + i as f64 * step
             };
-            Entity::new(x, y, COLORS[i % COLORS.len()])
+            (configs[i].build)(x, y, COLORS[i % COLORS.len()], HALF_SIZE)
         })
         .collect()
 }

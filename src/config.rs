@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use crate::actors::{Builder, Square, SHAPES};
 use crate::direction::Direction;
 
 /// Nombre de lettres de l'alphabet (A-Z).
@@ -15,33 +16,71 @@ pub const MAX_ENTITIES: usize = ALPHABET_SIZE / LETTERS_PER_GROUP;
 /// `Direction::ALL`.
 pub type ControlGroup = [char; LETTERS_PER_GROUP];
 
+/// Constructeur par défaut quand l'argument ne précise pas de forme.
+const DEFAULT_SHAPE: Builder = Square::boxed;
+
+/// Trouve le constructeur associé à `name` dans `actors::SHAPES`, insensible
+/// à la casse.
+fn find_shape(name: &str) -> Option<Builder> {
+    SHAPES
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case(name))
+        .map(|&(_, build)| build)
+}
+
+/// Touches + constructeur de forme d'une entité, issus d'un seul argument de
+/// ligne de commande. Pas de `PartialEq`/`Debug` dérivés : comparer des
+/// pointeurs de fonction n'est pas fiable (l'optimiseur peut fusionner deux
+/// fonctions identiques et les rendre "égales" par erreur).
+#[derive(Clone, Copy)]
+pub struct EntityConfig {
+    pub keys: ControlGroup,
+    pub build: Builder,
+}
+
 /// Transforme les arguments bruts de la ligne de commande (sans le nom du
-/// programme) en suites de touches validées — une par entité à créer.
+/// programme) en configurations validées — une par entité à créer.
+///
+/// Chaque argument est `LETTRES` ou `LETTRES:forme` (`forme` = `circle` ou
+/// `square`, insensible à la casse ; `square` par défaut si omis).
 ///
 /// Règles de validité :
-/// - il faut au moins une suite de 4 lettres ;
-/// - chaque argument doit faire exactement 4 lettres alphabétiques (A-Z) ;
+/// - il faut au moins un argument ;
+/// - la partie lettres doit faire exactement 4 lettres alphabétiques (A-Z) ;
 /// - aucune lettre ne doit apparaître deux fois, ni dans un même groupe, ni
-///   entre deux groupes différents.
-pub fn parse_args(args: &[String]) -> Result<Vec<ControlGroup>, String> {
+///   entre deux groupes différents ;
+/// - la forme, si précisée, doit être `circle` ou `square`.
+pub fn parse_args(args: &[String]) -> Result<Vec<EntityConfig>, String> {
     if args.is_empty() {
         return Err(
-            "Aucun carré à créer. Usage : squares.exe AZER QSDF WXCV (une suite de 4 lettres par carré)."
+            "Aucune entité à créer. Usage : squares.exe AZER QSDF:circle WXCV (une suite de 4 lettres par entité, suivie en option de \":circle\" ou \":square\" — carré par défaut)."
                 .to_string(),
         );
     }
 
     let mut seen_letters = HashSet::new();
-    let mut groups = Vec::with_capacity(args.len());
+    let mut configs = Vec::with_capacity(args.len());
 
     for arg in args {
-        let letters: Vec<char> = arg.chars().collect();
+        let (letters_part, shape_part) = match arg.split_once(':') {
+            Some((letters, shape)) => (letters, Some(shape)),
+            None => (arg.as_str(), None),
+        };
+
+        let letters: Vec<char> = letters_part.chars().collect();
 
         if letters.len() != LETTERS_PER_GROUP || !letters.iter().all(|c| c.is_ascii_alphabetic()) {
             return Err(format!(
-                "Argument invalide : \"{arg}\". Chaque carré doit être décrit par exactement {LETTERS_PER_GROUP} lettres (A-Z)."
+                "Argument invalide : \"{arg}\". Chaque entité doit être décrite par exactement {LETTERS_PER_GROUP} lettres (A-Z), suivies en option de \":circle\" ou \":square\"."
             ));
         }
+
+        let build = match shape_part {
+            None => DEFAULT_SHAPE,
+            Some(name) => find_shape(name).ok_or_else(|| {
+                format!("Forme inconnue : \"{name}\". Utilise \"circle\" ou \"square\" (carré par défaut).")
+            })?,
+        };
 
         let mut uppercased = Vec::with_capacity(LETTERS_PER_GROUP);
         for c in &letters {
@@ -55,11 +94,11 @@ pub fn parse_args(args: &[String]) -> Result<Vec<ControlGroup>, String> {
         }
 
         // `unwrap` sûr : `uppercased.len() == LETTERS_PER_GROUP`, vérifié plus haut.
-        let group: ControlGroup = uppercased.try_into().unwrap();
-        groups.push(group);
+        let keys: ControlGroup = uppercased.try_into().unwrap();
+        configs.push(EntityConfig { keys, build });
     }
 
-    Ok(groups)
+    Ok(configs)
 }
 
 #[cfg(test)]
@@ -72,14 +111,11 @@ mod tests {
 
     #[test]
     fn accepte_un_appel_valide() {
-        let result = parse_args(&args(&["AZER", "QSDF", "WXCV"]));
+        let result = parse_args(&args(&["AZER", "QSDF", "WXCV"])).unwrap();
+        let keys: Vec<ControlGroup> = result.iter().map(|c| c.keys).collect();
         assert_eq!(
-            result,
-            Ok(vec![
-                ['A', 'Z', 'E', 'R'],
-                ['Q', 'S', 'D', 'F'],
-                ['W', 'X', 'C', 'V'],
-            ])
+            keys,
+            vec![['A', 'Z', 'E', 'R'], ['Q', 'S', 'D', 'F'], ['W', 'X', 'C', 'V']]
         );
     }
 
@@ -112,6 +148,6 @@ mod tests {
     #[test]
     fn est_insensible_a_la_casse() {
         let result = parse_args(&args(&["azer"])).unwrap();
-        assert_eq!(result[0], ['A', 'Z', 'E', 'R']);
+        assert_eq!(result[0].keys, ['A', 'Z', 'E', 'R']);
     }
 }

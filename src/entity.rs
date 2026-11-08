@@ -3,32 +3,40 @@ use std::collections::HashSet;
 use crate::direction::Direction;
 use crate::position::Position;
 
-pub const SIZE: f64 = 50.0;
-/// Pixels par seconde
-const SPEED: f64 = 250.0;
-
 /// Rouge, vert, bleu, alpha — chaque composante entre 0.0 et 1.0.
 pub type Color = [f32; 4];
 
+/// État commun à toute entité mobile, indépendamment de sa forme — voir
+/// `actor::Actor`, qui s'appuie dessus via `get_entity`/`get_entity_mut`.
 pub struct Entity {
     position: Position,
     pub color: Color,
-    moving: HashSet<Direction>
+    moving: HashSet<Direction>,
 }
 
 impl Entity {
-    /// Crée une entité immobile à la position `(x, y)`.
+    /// Crée une entité immobile à la position `(x, y)` (son centre).
     pub fn new(x: f64, y: f64, color: Color) -> Self {
         Entity {
             position: Position::new(x, y),
             color,
-            moving: HashSet::new()
+            moving: HashSet::new(),
         }
     }
 
     /// Position actuelle de l'entité.
     pub fn position(&self) -> Position {
         self.position
+    }
+
+    /// Déplace l'entité à `position`.
+    pub fn set_position(&mut self, position: Position) {
+        self.position = position;
+    }
+
+    /// Directions actuellement actives.
+    pub fn moving_directions(&self) -> &HashSet<Direction> {
+        &self.moving
     }
 
     /// Active ou désactive le déplacement dans `direction`.
@@ -38,73 +46,5 @@ impl Entity {
         } else {
             self.moving.remove(&direction);
         }
-    }
-
-    /// Avance l'entité de `dt` secondes selon les directions actives, en
-    /// restant dans les limites `bounds` (largeur, hauteur). Le déplacement
-    /// est résolu axe par axe : sur chaque axe, s'il croiserait une autre
-    /// entité de `positions` (la sienne exclue, via `other != self.position`),
-    /// il est raccourci pour s'arrêter exactement au contact plutôt que
-    /// d'être annulé en bloc.
-    pub fn update(&mut self, dt: f64, bounds: (f64, f64), positions: &[Position]) {
-        let distance = SPEED * dt;
-        let (width, height) = bounds;
-
-        let mut dx = 0.0;
-        let mut dy = 0.0;
-        for direction in &self.moving {
-            let (ddx, ddy) = direction.delta();
-            dx += ddx * distance;
-            dy += ddy * distance;
-        }
-
-        let others: Vec<Position> = positions
-            .iter()
-            .copied()
-            .filter(|&other| other != self.position)
-            .collect();
-
-        let x = self.resolve_axis(dx, width - SIZE, &others, |p| p.x(), |p| p.y());
-        self.position = Position::new(x, self.position.y());
-
-        let y = self.resolve_axis(dy, height - SIZE, &others, |p| p.y(), |p| p.x());
-        self.position = Position::new(self.position.x(), y);
-    }
-
-    /// Nouvelle position sur un axe après un déplacement de `delta`,
-    /// raccourcie pour s'arrêter au contact d'une entité de `others` dont la
-    /// bande perpendiculaire chevauche la sienne. `moving_of`/`perp_of`
-    /// extraient, pour une `Position` donnée, la coordonnée sur l'axe qui
-    /// bouge et celle sur l'axe perpendiculaire — `(|p| p.x(), |p| p.y())`
-    /// pour résoudre x, `(|p| p.y(), |p| p.x())` pour résoudre y.
-    fn resolve_axis(
-        &self,
-        delta: f64,
-        max: f64,
-        others: &[Position],
-        moving_of: impl Fn(Position) -> f64,
-        perp_of: impl Fn(Position) -> f64,
-    ) -> f64 {
-        let self_moving = moving_of(self.position);
-        let self_perp = perp_of(self.position);
-
-        let mut moving = (self_moving + delta).clamp(0.0, max);
-
-        for other in others {
-            let other_perp = perp_of(*other);
-            let perp_overlap = self_perp < other_perp + SIZE && self_perp + SIZE > other_perp;
-            if !perp_overlap {
-                continue;
-            }
-
-            let other_moving = moving_of(*other);
-            if delta > 0.0 && other_moving >= self_moving {
-                moving = moving.min(other_moving - SIZE);
-            } else if delta < 0.0 && other_moving <= self_moving {
-                moving = moving.max(other_moving + SIZE);
-            }
-        }
-
-        moving
     }
 }

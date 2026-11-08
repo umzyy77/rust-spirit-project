@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 piston_window = "0.148.0"
+rapier2d-f64 = "0.36.1"

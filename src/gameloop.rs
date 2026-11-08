@@ -1,18 +1,18 @@
 use std::collections::HashMap;
 
-use piston_window::graphics::{clear, rectangle};
+use piston_window::graphics::clear;
 use piston_window::*;
 
+use crate::actors::Actor;
 use crate::controls;
 use crate::direction::Direction;
-use crate::entity::{Entity, SIZE};
 
 /// Boucle principale : tant que la fenêtre est ouverte, répercute les
 /// touches sur les entités concernées, avance la simulation (`update`), puis
 /// redessine la scène.
 pub fn run(
     window: &mut PistonWindow,
-    entities: &mut [Entity],
+    entities: &mut [Box<dyn Actor>],
     bindings: &HashMap<Key, (usize, Direction)>,
     bounds: (f64, f64),
 ) {
@@ -26,9 +26,19 @@ pub fn run(
         }
 
         if let Some(update) = event.update_args() {
-            let positions: Vec<_> = entities.iter().map(|e| e.position()).collect();
-            for entity in entities.iter_mut() {
-                entity.update(update.dt, bounds, &positions);
+            let snapshot: Vec<_> = entities
+                .iter()
+                .map(|e| (e.get_entity().position(), e.shape()))
+                .collect();
+
+            for (index, entity) in entities.iter_mut().enumerate() {
+                let others: Vec<_> = snapshot
+                    .iter()
+                    .enumerate()
+                    .filter(|&(other_index, _)| other_index != index)
+                    .map(|(_, (position, shape))| (*position, shape.clone_dyn()))
+                    .collect();
+                entity.update(update.dt, bounds, &others);
             }
         }
 
@@ -36,18 +46,12 @@ pub fn run(
     }
 }
 
-/// Dessine la scène : fond uni, puis chaque entité à sa position actuelle.
-fn draw(window: &mut PistonWindow, event: &Event, entities: &[Entity]) {
+/// Dessine la scène : fond uni, puis chaque entité se dessine elle-même.
+fn draw(window: &mut PistonWindow, event: &Event, entities: &[Box<dyn Actor>]) {
     window.draw_2d(event, |context, graphics, _device| {
         clear([0.1, 0.1, 0.12, 1.0], graphics);
         for entity in entities {
-            let position = entity.position();
-            rectangle(
-                entity.color,
-                [position.x(), position.y(), SIZE, SIZE],
-                context.transform,
-                graphics,
-            );
+            entity.draw(context.transform, graphics);
         }
     });
 }
@@ -58,9 +62,11 @@ fn handle_key(
     key: Key,
     pressed: bool,
     bindings: &HashMap<Key, (usize, Direction)>,
-    entities: &mut [Entity],
+    entities: &mut [Box<dyn Actor>],
 ) {
     if let Some((index, direction)) = controls::resolve(key, bindings) {
-        entities[index].set_moving(direction, pressed);
+        entities[index]
+            .get_entity_mut()
+            .set_moving(direction, pressed);
     }
 }
