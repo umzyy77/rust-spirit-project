@@ -9,6 +9,10 @@ pub const WIDTH: f32 = 800.0;
 pub const HEIGHT: f32 = 800.0;
 
 const HALF_SIZE: f32 = 25.0;
+/// Écart gardé entre une entité et les murs à son spawn, pour ne jamais
+/// démarrer exactement au contact (pénétration nulle mais tangente, qui
+/// peut déclencher une impulsion de dépénétration parasite au 1er tick).
+const SPAWN_MARGIN: f32 = 5.0;
 /// Même masse pour toutes les formes : sinon Rapier la calcule depuis
 /// l'aire du collider, et un carré domine un cercle de même taille.
 const ENTITY_MASS: f32 = 1.0;
@@ -67,15 +71,16 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
         let x = if count == 1 {
             WIDTH / 2.0
         } else {
-            let step = (WIDTH - HALF_SIZE * 2.0) / (count - 1) as f32;
-            HALF_SIZE + i as f32 * step
+            let span = HALF_SIZE + SPAWN_MARGIN;
+            let step = (WIDTH - span * 2.0) / (count - 1) as f32;
+            span + i as f32 * step
         };
 
         let (mesh, collider) = build_shape(entity.shape, &mut meshes, HALF_SIZE);
 
         commands.spawn((
             Mesh2d(mesh),
-            MeshMaterial2d(materials.add(COLORS[i])),
+            MeshMaterial2d(materials.add(COLORS[i % COLORS.len()])),
             Transform::from_xyz(x, HEIGHT / 2.0, 0.0),
             RigidBody::Dynamic,
             collider,
@@ -84,7 +89,7 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
             // Vue du dessus : pas de gravité ni de rotation au contact.
             GravityScale(0.0),
             LockedAxes::ROTATION_LOCKED_Z,
-            Controls(entity.keys),
+            Controls::new(entity.keys),
         ));
     }
 }

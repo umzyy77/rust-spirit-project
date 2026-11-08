@@ -2,15 +2,24 @@ use bevy::input::keyboard::Key;
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::Velocity;
 
-use crate::config::ControlGroup;
+use crate::config::{ControlGroup, KEYS_PER_ENTITY};
 use crate::direction::Direction;
 
 const SPEED: f32 = 250.0;
 
-/// Les touches d'une entité (une par direction), interrogées directement
-/// chaque frame.
+/// Les touches d'une entité (une par direction), converties en `Key` une
+/// seule fois au spawn plutôt qu'à chaque frame (ça allouerait une `String`
+/// par touche et par frame dans la boucle de jeu).
 #[derive(Component)]
-pub struct Controls(pub ControlGroup);
+pub struct Controls([Key; KEYS_PER_ENTITY]);
+
+impl Controls {
+    pub fn new(group: ControlGroup) -> Self {
+        // `Key` plutôt que `KeyCode` : respecte la disposition de clavier de
+        // l'utilisateur au lieu de l'emplacement physique de la touche.
+        Self(group.map(|c| Key::Character(c.to_ascii_lowercase().to_string().into())))
+    }
+}
 
 pub struct MovementPlugin;
 
@@ -26,9 +35,7 @@ fn movement(keyboard: Res<ButtonInput<Key>>, mut query: Query<(&Controls, &mut V
             .0
             .iter()
             .zip(Direction::ALL)
-            // `Key` plutôt que `KeyCode` : respecte la disposition de clavier
-            // de l'utilisateur au lieu de l'emplacement physique de la touche.
-            .filter(|(key, _)| keyboard.pressed(Key::Character(key.to_ascii_lowercase().to_string().into())))
+            .filter(|(key, _)| keyboard.pressed((*key).clone()))
             .fold(Vec2::ZERO, |v, (_, direction)| v + unit_vector(direction) * SPEED);
     }
 }
