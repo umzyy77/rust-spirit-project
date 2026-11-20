@@ -8,10 +8,7 @@ use crate::shapes::Shape;
 /// Pixels par seconde
 const SPEED: f64 = 250.0;
 
-/// Nombre de passes de correction de chevauchement par frame. Avec peu
-/// d'entités, une correction contre un bloqueur ne réintroduit presque
-/// jamais de chevauchement avec un autre — quelques passes suffisent
-/// largement à stabiliser les cas où ça arrive.
+/// Passes de correction de chevauchement par frame (une correction peut en réintroduire une autre).
 const CONTACT_RESOLUTION_PASSES: u32 = 4;
 
 /// Rouge, vert, bleu, alpha — chaque composante entre 0.0 et 1.0.
@@ -54,20 +51,17 @@ impl Entity {
         }
     }
 
-    /// Calcule la position de l'entité après `dt` secondes selon les
-    /// directions actives, sans modifier `self` : la mutation réelle se fait
-    /// via `set_position`, une fois que *toutes* les entités ont calculé
-    /// leur mouvement à partir du même instant de départ (sinon l'ordre de
-    /// traitement des entités changerait le résultat).
-    ///
-    /// Le déplacement est d'abord limité aux bornes de la fenêtre, en
-    /// bloc, sans égard aux autres entités. Puis, si ça chevauche une
-    /// entité de `others`, on recule exactement de la profondeur de
-    /// pénétration calculée par `gjk::penetration` (EPA) — plusieurs
-    /// passes au cas où corriger un chevauchement en réintroduirait un
-    /// autre. `gjk` ne distingue jamais le type concret des formes
-    /// comparées, donc ceci fonctionne pour n'importe quelle combinaison.
+    /// Position après `dt` secondes : clamp aux bornes de la fenêtre, puis
+    /// recul de la *moitié* de la pénétration (`gjk::penetration`/EPA) contre
+    /// chaque entité de `others` qui chevauche — l'autre joueur fait le même
+    /// calcul de son côté, donc les deux moitiés se somment à la séparation
+    /// exacte. Ne mute pas `self` : voir `set_position`.
     pub fn resolve_movement(&self, dt: f64, bounds: (f64, f64), others: &[(Position, &dyn Shape)]) -> Position {
+        // Immobile : rien à corriger, le serveur ne nous déplace jamais pour un autre joueur.
+        if self.moving.is_empty() {
+            return self.position;
+        }
+
         let distance = SPEED * dt;
         let (width, height) = bounds;
 
@@ -90,9 +84,10 @@ impl Entity {
 
             for &(other_position, other_shape) in others {
                 if let Some(hit) = gjk::penetration(self.shape.as_ref(), resolved, other_shape, other_position) {
+                    let half_depth = hit.depth / 2.0;
                     resolved = Position::new(
-                        resolved.x() + hit.axis.0 * hit.depth,
-                        resolved.y() + hit.axis.1 * hit.depth,
+                        resolved.x() + hit.axis.0 * half_depth,
+                        resolved.y() + hit.axis.1 * half_depth,
                     );
                     corrected = true;
                 }

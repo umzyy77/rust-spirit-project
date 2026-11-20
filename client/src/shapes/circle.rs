@@ -1,6 +1,8 @@
 use super::{RenderKind, Shape};
 use common::Position;
 
+/// Jamais construite en production (cf. `RenderKind`) — gardée pour les tests de `gjk`.
+#[allow(dead_code)]
 pub struct Circle {
     pub radius: f64,
 }

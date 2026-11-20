@@ -5,16 +5,12 @@ use piston_window::wgpu_graphics::WgpuGraphics;
 use common::Position;
 use crate::shapes::{RenderKind, Shape};
 
-/// Rendu d'une forme avec piston — séparé de `Shape` (géométrie pure) pour
-/// que la collision (GJK, via `Shape::support`) ne dépende jamais de la
-/// bibliothèque graphique.
+/// Rendu d'une forme avec piston — séparé de `Shape` pour que la collision (GJK) ne dépende jamais du rendu.
 pub trait Drawable {
     fn draw(&self, center: Position, color: [f32; 4], transform: Matrix2d, graphics: &mut WgpuGraphics<'_>);
 }
 
-/// Toute forme (`T: Shape`, y compris `dyn Shape` grâce à `?Sized`) sait se
-/// dessiner à partir de ses seules `half_extents`/`render_kind` — aucune
-/// forme n'a besoin d'écrire elle-même un `impl Drawable`.
+/// Fourni automatiquement pour toute forme à partir de `half_extents`/`render_kind`.
 impl<T: Shape + ?Sized> Drawable for T {
     fn draw(&self, center: Position, color: [f32; 4], transform: Matrix2d, graphics: &mut WgpuGraphics<'_>) {
         let (half_width, half_height) = self.half_extents();
