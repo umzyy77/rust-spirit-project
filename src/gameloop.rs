@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 
-use piston_window::graphics::{clear, rectangle};
+use piston_window::graphics::clear;
 use piston_window::*;
 
 use crate::controls;
 use crate::direction::Direction;
-use crate::entity::{Entity, SIZE};
+use crate::drawable::Drawable;
+use crate::entity::Entity;
 
 /// Boucle principale : tant que la fenêtre est ouverte, répercute les
 /// touches sur les entités concernées, avance la simulation (`update`), puis
@@ -26,9 +27,15 @@ pub fn run(
         }
 
         if let Some(update) = event.update_args() {
-            let positions: Vec<_> = entities.iter().map(|e| e.position()).collect();
+            let snapshot: Vec<_> = entities
+                .iter()
+                .map(|e| {
+                    let (half_width, half_height) = e.shape().half_extents();
+                    (e.position(), half_width, half_height)
+                })
+                .collect();
             for entity in entities.iter_mut() {
-                entity.update(update.dt, bounds, &positions);
+                entity.update(update.dt, bounds, &snapshot);
             }
         }
 
@@ -41,13 +48,9 @@ fn draw(window: &mut PistonWindow, event: &Event, entities: &[Entity]) {
     window.draw_2d(event, |context, graphics, _device| {
         clear([0.1, 0.1, 0.12, 1.0], graphics);
         for entity in entities {
-            let position = entity.position();
-            rectangle(
-                entity.color,
-                [position.x(), position.y(), SIZE, SIZE],
-                context.transform,
-                graphics,
-            );
+            entity
+                .shape()
+                .draw(entity.position(), entity.color, context.transform, graphics);
         }
     });
 }

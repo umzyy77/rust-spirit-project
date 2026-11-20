@@ -1,9 +1,11 @@
 mod config;
 mod controls;
 mod direction;
+mod drawable;
 mod entity;
 mod gameloop;
 mod position;
+mod shapes;
 mod spawn;
 
 use std::env;
