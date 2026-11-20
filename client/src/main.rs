@@ -5,7 +5,6 @@ mod drawable;
 mod entity;
 mod gjk;
 mod gameloop;
-mod position;
 mod shapes;
 mod spawn;
 

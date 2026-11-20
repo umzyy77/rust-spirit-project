@@ -1,3 +1,6 @@
+/// Position partagée entre `server` (qui ne fait que la suivre) et `client`
+/// (qui l'affiche et la fait évoluer localement) — la seule chose que les
+/// deux bouts du réseau ont besoin de connaître en commun pour l'instant.
 #[derive(Clone, Copy, PartialEq)]
 pub struct Position {
     x: f64,

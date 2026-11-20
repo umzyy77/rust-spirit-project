@@ -4,7 +4,7 @@ mod rect;
 pub use circle::Circle;
 pub use rect::Rect;
 
-use crate::position::Position;
+use common::Position;
 
 /// Quelle primitive piston utiliser pour dessiner la boîte englobante d'une
 /// forme. Aucune dépendance à piston ici — juste un choix parmi deux formes

@@ -2,7 +2,7 @@ mod epa;
 
 use std::ops::{Add, Neg, Sub};
 
-use crate::position::Position;
+use common::Position;
 use crate::shapes::Shape;
 
 // `Penetration` n'est jamais nommé explicitement ailleurs dans le projet

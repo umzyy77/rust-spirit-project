@@ -7,7 +7,7 @@ use crate::controls;
 use crate::direction::Direction;
 use crate::drawable::Drawable;
 use crate::entity::Entity;
-use crate::position::Position;
+use common::Position;
 use crate::shapes::Shape;
 
 /// Boucle principale : tant que la fenêtre est ouverte, répercute les

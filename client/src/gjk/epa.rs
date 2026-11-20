@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
 use super::{enclosing_simplex, initial_direction, minkowski_support, Vec2};
-use crate::position::Position;
+use common::Position;
 use crate::shapes::Shape;
 
 /// Garde-fou pour EPA : chaque itération ajoute un sommet au polytope.
