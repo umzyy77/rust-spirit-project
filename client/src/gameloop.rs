@@ -7,12 +7,10 @@ use piston_window::*;
 use crate::controls;
 use crate::direction::Direction;
 use crate::drawable::Drawable;
-use crate::entity::Entity;
+use crate::entity::{self, Entity};
 use crate::interpolation::Interpolation;
 use crate::network::{Command, NetEvent};
-use crate::shapes::Shape;
 use crate::spawn;
-use common::Position;
 
 /// Nombre de ticks entre deux `LIST` au serveur — `Interpolation` lisse le
 /// mouvement des autres joueurs entre deux réponses, donc pas besoin de les relire à chaque frame.
@@ -30,6 +28,7 @@ pub fn run(
     events: &Receiver<NetEvent>,
 ) {
     let mut frame: u32 = 0;
+    let mut connected = true;
 
     while let Some(event) = window.next() {
         if let Some(Button::Keyboard(key)) = event.press_args() {
@@ -41,37 +40,29 @@ pub fn run(
         }
 
         if let Some(update) = event.update_args() {
-            while let Ok(net_event) = events.try_recv() {
-                match net_event {
-                    NetEvent::Moved(position) => entities[0].set_position(position),
-                    NetEvent::List(squares) => spawn::sync_with_server(entities, ids, interpolations, &squares),
+            if connected {
+                connected = spawn::apply_network_events(events, entities, ids, interpolations);
+                if !connected {
+                    window.set_title("Squares - connexion au serveur perdue".to_string());
                 }
             }
 
             // D'abord les entités distantes, pour que la collision locale les
             // voie à leur position affichée cette frame, pas leur dernière position réseau.
-            let step = 1.0 / LIST_POLL_INTERVAL as f64;
-            for (entity, interpolation) in entities.iter_mut().zip(interpolations.iter_mut()).skip(1) {
-                interpolation.advance(step);
-                entity.set_position(interpolation.current());
-            }
+            spawn::advance_remote_entities(entities, interpolations, 1.0 / LIST_POLL_INTERVAL as f64);
 
-            let before = entities[0].position();
-            let others: Vec<(Position, &dyn Shape)> = entities[1..]
-                .iter()
-                .map(|other| (other.position(), other.shape()))
-                .collect();
-            let after = entities[0].resolve_movement(update.dt, bounds, &others);
-            entities[0].set_position(after);
+            let moved = entity::simulate_local(entities, bounds, update.dt);
 
-            if after != before {
-                // Prédiction locale immédiate ; le serveur confirmera ou corrigera via un futur `NetEvent::Moved`.
-                let _ = commands.send(Command::Move(after));
-            }
+            if connected {
+                if let Some(position) = moved {
+                    // Prédiction locale immédiate ; le serveur confirmera ou corrigera via un futur `NetEvent::Moved`.
+                    let _ = commands.send(Command::Move(position));
+                }
 
-            frame += 1;
-            if frame % LIST_POLL_INTERVAL == 0 {
-                let _ = commands.send(Command::RequestList);
+                frame += 1;
+                if frame % LIST_POLL_INTERVAL == 0 {
+                    let _ = commands.send(Command::RequestList);
+                }
             }
         }
 
