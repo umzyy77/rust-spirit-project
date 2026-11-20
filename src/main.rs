@@ -3,6 +3,7 @@ mod controls;
 mod direction;
 mod drawable;
 mod entity;
+mod gjk;
 mod gameloop;
 mod position;
 mod shapes;

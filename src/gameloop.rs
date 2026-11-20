@@ -7,6 +7,8 @@ use crate::controls;
 use crate::direction::Direction;
 use crate::drawable::Drawable;
 use crate::entity::Entity;
+use crate::position::Position;
+use crate::shapes::Shape;
 
 /// Boucle principale : tant que la fenêtre est ouverte, répercute les
 /// touches sur les entités concernées, avance la simulation (`update`), puis
@@ -27,15 +29,22 @@ pub fn run(
         }
 
         if let Some(update) = event.update_args() {
-            let snapshot: Vec<_> = entities
+            let new_positions: Vec<Position> = entities
                 .iter()
-                .map(|e| {
-                    let (half_width, half_height) = e.shape().half_extents();
-                    (e.position(), half_width, half_height)
+                .enumerate()
+                .map(|(i, entity)| {
+                    let others: Vec<(Position, &dyn Shape)> = entities
+                        .iter()
+                        .enumerate()
+                        .filter(|&(j, _)| j != i)
+                        .map(|(_, other)| (other.position(), other.shape()))
+                        .collect();
+                    entity.resolve_movement(update.dt, bounds, &others)
                 })
                 .collect();
-            for entity in entities.iter_mut() {
-                entity.update(update.dt, bounds, &snapshot);
+
+            for (entity, position) in entities.iter_mut().zip(new_positions) {
+                entity.set_position(position);
             }
         }
 
