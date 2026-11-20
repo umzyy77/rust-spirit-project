@@ -5,23 +5,14 @@ use std::ops::{Add, Neg, Sub};
 use common::Position;
 use crate::shapes::Shape;
 
-// `Penetration` n'est jamais nommé explicitement ailleurs dans le projet
-// (entity.rs déstructure le résultat de `penetration` sans annoter son
-// type) — la ré-export reste nécessaire pour que le type du retour de
-// `penetration` soit public, même sans usage du nom lui-même.
+// Nécessaire pour que le type de retour de `penetration` soit public, même sans usage direct du nom.
 #[allow(unused_imports)]
 pub use epa::{penetration, Penetration};
 
-/// Garde-fou : en 2D, GJK converge toujours en quelques itérations pour un
-/// simplexe à 3 sommets maximum. Cette limite n'est jamais censée être
-/// atteinte ; elle protège juste contre un cas numérique imprévu.
+/// Garde-fou : GJK converge en quelques itérations en 2D ; ne devrait jamais être atteint.
 const MAX_ITERATIONS: usize = 20;
 
-/// Vecteur 2D interne à cet algorithme — jamais exposé ailleurs dans le
-/// projet, pour ne pas imposer ce détail d'implémentation au reste du code.
-/// La frontière avec `Shape::support` reste en `(f64, f64)` brut pour la
-/// direction passée en entrée ; sa sortie (`Position`) est convertie via
-/// `Vec2::from_position`.
+/// Vecteur 2D interne à l'algorithme, jamais exposé ailleurs.
 #[derive(Clone, Copy, PartialEq)]
 struct Vec2 {
     x: f64,
@@ -41,8 +32,7 @@ impl Vec2 {
         self.x * other.x + self.y * other.y
     }
 
-    /// Rotation de 90° dans un sens fixe (peu importe lequel ici : seule la
-    /// cohérence entre deux appels compte, pas le sens en lui-même).
+    /// Rotation de 90° (sens arbitraire, mais cohérent entre deux appels).
     fn perp(self) -> Vec2 {
         Vec2::new(-self.y, self.x)
     }
@@ -78,14 +68,9 @@ impl Neg for Vec2 {
     }
 }
 
-/// Teste si deux formes convexes (centrées sur `position_a`/`position_b`)
-/// se chevauchent. Ne lance que GJK, sans l'étape EPA (inutile pour une
-/// simple réponse oui/non).
-///
-/// Non appelée par le jeu (`resolve_movement` a besoin de la profondeur,
-/// donc utilise `penetration` directement) — gardée pour isoler, dans les
-/// tests, "GJK détecte-t-il correctement le contact" de "EPA calcule-t-il
-/// la bonne profondeur".
+/// Teste si deux formes convexes se chevauchent (GJK seul, sans EPA). Non
+/// appelée par le jeu (`resolve_movement` utilise `penetration` directement) —
+/// gardée pour tester GJK indépendamment d'EPA.
 #[allow(dead_code)]
 pub fn overlap(
     shape_a: &dyn Shape,
@@ -123,13 +108,9 @@ fn initial_direction(position_a: Position, position_b: Position) -> Vec2 {
     }
 }
 
-/// Cœur de GJK : cherche un triangle de points de la différence de
-/// Minkowski qui contient l'origine. `None` si les formes ne se touchent
-/// pas (un point sondé n'avance plus vers l'origine).
-///
-/// Le simplexe n'a jamais plus de 3 sommets : un tableau sur la pile
-/// (`[Vec2; 3]` + `len`) évite une allocation de tas à chaque itération,
-/// contrairement à un `Vec` reconstruit en boucle.
+/// Cœur de GJK : cherche un triangle de la différence de Minkowski qui
+/// contient l'origine. `None` si les formes ne se touchent pas. Simplexe sur
+/// la pile (`[Vec2; 3]` + `len`) plutôt qu'un `Vec`, pour éviter l'allocation.
 fn enclosing_simplex(support: &impl Fn(Vec2) -> Vec2, initial_direction: Vec2) -> Option<[Vec2; 3]> {
     let zero = Vec2::new(0.0, 0.0);
     let mut simplex = [support(initial_direction), zero, zero];
