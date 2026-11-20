@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::direction::Direction;
 use crate::gjk;
-use crate::position::Position;
+use common::Position;
 use crate::shapes::Shape;
 
 /// Pixels par seconde

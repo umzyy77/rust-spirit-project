@@ -2,7 +2,7 @@ use piston_window::graphics::math::Matrix2d;
 use piston_window::graphics::{ellipse, rectangle};
 use piston_window::wgpu_graphics::WgpuGraphics;
 
-use crate::position::Position;
+use common::Position;
 use crate::shapes::{RenderKind, Shape};
 
 /// Rendu d'une forme avec piston — séparé de `Shape` (géométrie pure) pour

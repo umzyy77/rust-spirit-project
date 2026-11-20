@@ -1,5 +1,5 @@
 use super::{RenderKind, Shape};
-use crate::position::Position;
+use common::Position;
 
 pub struct Circle {
     pub radius: f64,
