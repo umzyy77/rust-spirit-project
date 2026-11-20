@@ -1,6 +1,6 @@
 use crate::config::{ControlGroup, MAX_ENTITIES};
 use crate::entity::{Color, Entity};
-use crate::shapes::Rect;
+use crate::shapes::{Circle, Rect, Shape};
 
 /// Taille (largeur et hauteur) des carrés spawnés par ce module.
 const SIZE: f64 = 50.0;
@@ -31,7 +31,11 @@ pub fn build_entities(groups: &[ControlGroup], width: f64, height: f64) -> Vec<E
                 let step = (width - SIZE) / (count - 1) as f64;
                 i as f64 * step + half
             };
-            let shape = Box::new(Rect { width: SIZE, height: SIZE });
+            let shape: Box<dyn Shape> = if i % 2 == 1 {
+                Box::new(Circle { radius: half })
+            } else {
+                Box::new(Rect { width: SIZE, height: SIZE })
+            };
             Entity::new(x, y, shape, COLORS[i % COLORS.len()])
         })
         .collect()

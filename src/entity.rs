@@ -1,11 +1,17 @@
 use std::collections::HashSet;
 
 use crate::direction::Direction;
+use crate::gjk;
 use crate::position::Position;
 use crate::shapes::Shape;
 
 /// Pixels par seconde
 const SPEED: f64 = 250.0;
+
+/// Nombre de raffinements de la dichotomie cherchant le contact exact.
+/// 20 itérations divisent le déplacement par ~1 million — largement de
+/// quoi descendre sous la précision du pixel.
+const CONTACT_SEARCH_ITERATIONS: u32 = 20;
 
 /// Rouge, vert, bleu, alpha — chaque composante entre 0.0 et 1.0.
 pub type Color = [f32; 4];
@@ -47,18 +53,18 @@ impl Entity {
         }
     }
 
-    /// Avance l'entité de `dt` secondes selon les directions actives, en
-    /// restant dans les limites `bounds` (largeur, hauteur). Le déplacement
-    /// est résolu axe par axe : sur chaque axe, s'il croiserait une autre
-    /// entité de `others` (position du centre, demi-largeur, demi-hauteur —
-    /// la sienne exclue via `other_position != self.position`), il est
-    /// raccourci pour s'arrêter exactement au contact plutôt que d'être
-    /// annulé en bloc.
+    /// Calcule la position de l'entité après `dt` secondes selon les
+    /// directions actives, sans modifier `self` : la mutation réelle se fait
+    /// via `set_position`, une fois que *toutes* les entités ont calculé
+    /// leur mouvement à partir du même instant de départ (sinon l'ordre de
+    /// traitement des entités changerait le résultat).
     ///
-    /// NB : cette collision reste pour l'instant une boîte englobante
-    /// (AABB), même pour un `Circle` — l'étape suivante remplacera ce test
-    /// par une vraie formule géométrique basée sur `Shape::support`.
-    pub fn update(&mut self, dt: f64, bounds: (f64, f64), others: &[(Position, f64, f64)]) {
+    /// Le déplacement est d'abord limité aux bornes de la fenêtre, puis
+    /// raccourci par dichotomie jusqu'au contact exact avec la première
+    /// entité de `others` qu'il croiserait — `gjk::overlap` ne distingue
+    /// jamais le type concret des formes comparées, donc ceci fonctionne
+    /// pour n'importe quelle combinaison de formes.
+    pub fn resolve_movement(&self, dt: f64, bounds: (f64, f64), others: &[(Position, &dyn Shape)]) -> Position {
         let distance = SPEED * dt;
         let (width, height) = bounds;
 
@@ -70,67 +76,46 @@ impl Entity {
             dy += ddy * distance;
         }
 
-        let others: Vec<(Position, f64, f64)> = others
-            .iter()
-            .copied()
-            .filter(|&(other_position, _, _)| other_position != self.position)
-            .collect();
+        let (half_width, half_height) = self.shape.half_extents();
+        let target = (
+            (self.position.x() + dx).clamp(half_width, width - half_width),
+            (self.position.y() + dy).clamp(half_height, height - half_height),
+        );
+        let movement = (target.0 - self.position.x(), target.1 - self.position.y());
 
-        let x = self.resolve_axis(dx, width, &others, |p| p.x(), |p| p.y(), |(w, _)| w, |(_, h)| h);
-        self.position = Position::new(x, self.position.y());
+        let collides_at = |fraction: f64| -> bool {
+            let probe = Position::new(
+                self.position.x() + movement.0 * fraction,
+                self.position.y() + movement.1 * fraction,
+            );
+            others.iter().any(|&(other_position, other_shape)| {
+                gjk::overlap(self.shape.as_ref(), probe, other_shape, other_position)
+            })
+        };
 
-        let y = self.resolve_axis(dy, height, &others, |p| p.y(), |p| p.x(), |(_, h)| h, |(w, _)| w);
-        self.position = Position::new(self.position.x(), y);
-    }
+        if !collides_at(1.0) {
+            return Position::new(target.0, target.1);
+        }
 
-    /// Nouvelle position du centre sur un axe après un déplacement de
-    /// `delta`, restant dans `[demi-étendue, bounds_dim - demi-étendue]` et
-    /// raccourcie pour s'arrêter au contact d'une entité de `others` (chacune
-    /// avec ses propres demi-étendues) dont la bande perpendiculaire
-    /// chevauche la sienne. `moving_of`/`perp_of` extraient, pour une
-    /// `Position` donnée, la coordonnée sur l'axe qui bouge et celle sur
-    /// l'axe perpendiculaire ; `moving_half_of`/`perp_half_of` font la même
-    /// chose pour une demi-étendue `(demi-largeur, demi-hauteur)` —
-    /// `(|p| p.x(), |p| p.y(), |(w, _)| w, |(_, h)| h)` pour résoudre x, les
-    /// quatre inversés pour résoudre y.
-    fn resolve_axis(
-        &self,
-        delta: f64,
-        bounds_dim: f64,
-        others: &[(Position, f64, f64)],
-        moving_of: impl Fn(Position) -> f64,
-        perp_of: impl Fn(Position) -> f64,
-        moving_half_of: impl Fn((f64, f64)) -> f64,
-        perp_half_of: impl Fn((f64, f64)) -> f64,
-    ) -> f64 {
-        let self_moving = moving_of(self.position);
-        let self_perp = perp_of(self.position);
-        let self_extents = self.shape.half_extents();
-        let self_moving_half = moving_half_of(self_extents);
-        let self_perp_half = perp_half_of(self_extents);
-
-        let mut moving = (self_moving + delta).clamp(self_moving_half, bounds_dim - self_moving_half);
-
-        for &(other_position, other_half_width, other_half_height) in others {
-            let other_extents = (other_half_width, other_half_height);
-            let other_perp = perp_of(other_position);
-            let other_perp_half = perp_half_of(other_extents);
-            let perp_overlap = self_perp - self_perp_half < other_perp + other_perp_half
-                && self_perp + self_perp_half > other_perp - other_perp_half;
-            if !perp_overlap {
-                continue;
-            }
-
-            let other_moving = moving_of(other_position);
-            let other_moving_half = moving_half_of(other_extents);
-            let gap = self_moving_half + other_moving_half;
-            if delta > 0.0 && other_moving >= self_moving {
-                moving = moving.min(other_moving - gap);
-            } else if delta < 0.0 && other_moving <= self_moving {
-                moving = moving.max(other_moving + gap);
+        let mut safe_fraction = 0.0;
+        let mut blocked_fraction = 1.0;
+        for _ in 0..CONTACT_SEARCH_ITERATIONS {
+            let mid = (safe_fraction + blocked_fraction) / 2.0;
+            if collides_at(mid) {
+                blocked_fraction = mid;
+            } else {
+                safe_fraction = mid;
             }
         }
 
-        moving
+        Position::new(
+            self.position.x() + movement.0 * safe_fraction,
+            self.position.y() + movement.1 * safe_fraction,
+        )
+    }
+
+    /// Applique une position déjà calculée par `resolve_movement`.
+    pub fn set_position(&mut self, position: Position) {
+        self.position = position;
     }
 }
