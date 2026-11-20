@@ -8,10 +8,11 @@ use crate::shapes::Shape;
 /// Pixels par seconde
 const SPEED: f64 = 250.0;
 
-/// Nombre de raffinements de la dichotomie cherchant le contact exact.
-/// 20 itérations divisent le déplacement par ~1 million — largement de
-/// quoi descendre sous la précision du pixel.
-const CONTACT_SEARCH_ITERATIONS: u32 = 20;
+/// Nombre de passes de correction de chevauchement par frame. Avec peu
+/// d'entités, une correction contre un bloqueur ne réintroduit presque
+/// jamais de chevauchement avec un autre — quelques passes suffisent
+/// largement à stabiliser les cas où ça arrive.
+const CONTACT_RESOLUTION_PASSES: u32 = 4;
 
 /// Rouge, vert, bleu, alpha — chaque composante entre 0.0 et 1.0.
 pub type Color = [f32; 4];
@@ -59,11 +60,13 @@ impl Entity {
     /// leur mouvement à partir du même instant de départ (sinon l'ordre de
     /// traitement des entités changerait le résultat).
     ///
-    /// Le déplacement est d'abord limité aux bornes de la fenêtre, puis
-    /// raccourci par dichotomie jusqu'au contact exact avec la première
-    /// entité de `others` qu'il croiserait — `gjk::overlap` ne distingue
-    /// jamais le type concret des formes comparées, donc ceci fonctionne
-    /// pour n'importe quelle combinaison de formes.
+    /// Le déplacement est d'abord limité aux bornes de la fenêtre, en
+    /// bloc, sans égard aux autres entités. Puis, si ça chevauche une
+    /// entité de `others`, on recule exactement de la profondeur de
+    /// pénétration calculée par `gjk::penetration` (EPA) — plusieurs
+    /// passes au cas où corriger un chevauchement en réintroduirait un
+    /// autre. `gjk` ne distingue jamais le type concret des formes
+    /// comparées, donc ceci fonctionne pour n'importe quelle combinaison.
     pub fn resolve_movement(&self, dt: f64, bounds: (f64, f64), others: &[(Position, &dyn Shape)]) -> Position {
         let distance = SPEED * dt;
         let (width, height) = bounds;
@@ -77,41 +80,30 @@ impl Entity {
         }
 
         let (half_width, half_height) = self.shape.half_extents();
-        let target = (
+        let mut resolved = Position::new(
             (self.position.x() + dx).clamp(half_width, width - half_width),
             (self.position.y() + dy).clamp(half_height, height - half_height),
         );
-        let movement = (target.0 - self.position.x(), target.1 - self.position.y());
 
-        let collides_at = |fraction: f64| -> bool {
-            let probe = Position::new(
-                self.position.x() + movement.0 * fraction,
-                self.position.y() + movement.1 * fraction,
-            );
-            others.iter().any(|&(other_position, other_shape)| {
-                gjk::overlap(self.shape.as_ref(), probe, other_shape, other_position)
-            })
-        };
+        for _ in 0..CONTACT_RESOLUTION_PASSES {
+            let mut corrected = false;
 
-        if !collides_at(1.0) {
-            return Position::new(target.0, target.1);
-        }
+            for &(other_position, other_shape) in others {
+                if let Some(hit) = gjk::penetration(self.shape.as_ref(), resolved, other_shape, other_position) {
+                    resolved = Position::new(
+                        resolved.x() + hit.axis.0 * hit.depth,
+                        resolved.y() + hit.axis.1 * hit.depth,
+                    );
+                    corrected = true;
+                }
+            }
 
-        let mut safe_fraction = 0.0;
-        let mut blocked_fraction = 1.0;
-        for _ in 0..CONTACT_SEARCH_ITERATIONS {
-            let mid = (safe_fraction + blocked_fraction) / 2.0;
-            if collides_at(mid) {
-                blocked_fraction = mid;
-            } else {
-                safe_fraction = mid;
+            if !corrected {
+                break;
             }
         }
 
-        Position::new(
-            self.position.x() + movement.0 * safe_fraction,
-            self.position.y() + movement.1 * safe_fraction,
-        )
+        resolved
     }
 
     /// Applique une position déjà calculée par `resolve_movement`.
