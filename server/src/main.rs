@@ -2,13 +2,29 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use common::{Position, SIZE};
 
+/// Un carré connecté : sa position, et la dernière fois qu'on a reçu un
+/// message de son client (pour détecter une coupure réseau brutale, sans
+/// FIN ni RST, que la fermeture normale du socket ne voit jamais).
+#[derive(Clone, Copy)]
+struct Square {
+    position: Position,
+    last_seen: Instant,
+}
+
 /// Carrés partagés entre tous les clients connectés, derrière un seul `Mutex`.
-type Squares = Arc<Mutex<Vec<Position>>>;
+/// `None` = slot libre (client déconnecté ou expiré).
+type Squares = Arc<Mutex<Vec<Option<Square>>>>;
 
 const ADDRESS: &str = "127.0.0.1:7878";
+
+/// Au-delà de ce délai sans message, un client est considéré déconnecté.
+const CLIENT_TIMEOUT: Duration = Duration::from_secs(5);
+/// Fréquence à laquelle on vérifie les clients inactifs.
+const REAP_INTERVAL: Duration = Duration::from_secs(1);
 
 fn main() {
     let listener = TcpListener::bind(ADDRESS).expect("impossible d'ouvrir le port");
@@ -17,8 +33,14 @@ fn main() {
     run(listener, Arc::new(Mutex::new(Vec::new())));
 }
 
-/// Boucle d'acceptation : un thread par client connecté, tous partageant `squares`.
+/// Boucle d'acceptation : un thread par client connecté, tous partageant
+/// `squares`, plus un thread de nettoyage des clients inactifs (`reap_stale_clients`).
 fn run(listener: TcpListener, squares: Squares) {
+    thread::spawn({
+        let squares = Arc::clone(&squares);
+        move || reap_stale_clients(squares)
+    });
+
     for stream in listener.incoming() {
         let stream = match stream {
             Ok(stream) => stream,
@@ -35,6 +57,22 @@ fn run(listener: TcpListener, squares: Squares) {
 
         let squares = Arc::clone(&squares);
         thread::spawn(move || handle_client(stream, squares));
+    }
+}
+
+/// Libère (marque `None`) les slots dont le client n'a plus donné signe de
+/// vie depuis `CLIENT_TIMEOUT` : seul filet de sécurité pour une coupure
+/// réseau brutale, que la fermeture normale du socket ne détecte jamais.
+fn reap_stale_clients(squares: Squares) {
+    loop {
+        thread::sleep(REAP_INTERVAL);
+
+        let mut squares = squares.lock().unwrap();
+        for slot in squares.iter_mut() {
+            if slot.is_some_and(|square| square.last_seen.elapsed() > CLIENT_TIMEOUT) {
+                *slot = None;
+            }
+        }
     }
 }
 
@@ -94,12 +132,15 @@ fn resolve_collisions(mut candidate: Position, others: &[Position]) -> Position 
 
 /// Crée la position du client (son id = son index dans `squares`) sous un
 /// seul verrou — sinon deux connexions simultanées pourraient obtenir le
-/// même id ou la même position — puis traite ses messages jusqu'à déconnexion.
+/// même id ou la même position — puis traite ses messages jusqu'à
+/// déconnexion, où son slot est marqué libre (`None`) pour ne plus
+/// apparaître dans `LIST`.
 fn handle_client(mut stream: TcpStream, squares: Squares) {
     let id = {
         let mut squares = squares.lock().unwrap();
-        let position = pick_spawn_position(&squares);
-        squares.push(position);
+        let existing: Vec<Position> = squares.iter().flatten().map(|square| square.position).collect();
+        let position = pick_spawn_position(&existing);
+        squares.push(Some(Square { position, last_seen: Instant::now() }));
         squares.len() - 1
     };
 
@@ -119,12 +160,18 @@ fn handle_client(mut stream: TcpStream, squares: Squares) {
         }
     }
 
+    squares.lock().unwrap()[id] = None;
     println!("Client {id} deconnecte.");
 }
 
 /// Traite un message du client `id`. `false` signifie "ferme la connexion"
 /// (message mal formé irrécupérable ou écriture réseau échouée).
 fn handle_message(line: &str, id: usize, squares: &Squares, stream: &mut TcpStream) -> bool {
+    // Un message, quel qu'il soit, prouve que le client est toujours là.
+    if let Some(square) = squares.lock().unwrap()[id].as_mut() {
+        square.last_seen = Instant::now();
+    }
+
     let mut parts = line.split_whitespace();
 
     match parts.next() {
@@ -138,21 +185,26 @@ fn handle_message(line: &str, id: usize, squares: &Squares, stream: &mut TcpStre
 
             let resolved = {
                 let mut squares = squares.lock().unwrap();
-                let others: Vec<Position> =
-                    squares.iter().enumerate().filter(|&(other_id, _)| other_id != id).map(|(_, &p)| p).collect();
+                let others: Vec<Position> = squares
+                    .iter()
+                    .enumerate()
+                    .filter(|&(other_id, _)| other_id != id)
+                    .filter_map(|(_, slot)| slot.map(|square| square.position))
+                    .collect();
 
                 let resolved = resolve_collisions(Position::new(x, y), &others);
-                squares[id] = resolved;
+                squares[id].as_mut().unwrap().position = resolved;
                 resolved
             };
 
             writeln!(stream, "POS {} {}", resolved.x(), resolved.y()).is_ok()
         }
         Some("LIST") => {
-            let snapshot: Vec<Position> = squares.lock().unwrap().clone();
+            let snapshot: Vec<Option<Square>> = squares.lock().unwrap().clone();
 
-            for (other_id, position) in snapshot.iter().enumerate() {
-                if writeln!(stream, "{other_id} {} {}", position.x(), position.y()).is_err() {
+            for (other_id, slot) in snapshot.iter().enumerate() {
+                let Some(square) = slot else { continue };
+                if writeln!(stream, "{other_id} {} {}", square.position.x(), square.position.y()).is_err() {
                     return false;
                 }
             }
@@ -257,5 +309,41 @@ mod tests {
         assert!(lines.contains(&"0 5 7".to_string()));
         // B spawn juste après A (qui occupait (25, 25)) : pas de chevauchement.
         assert!(lines.contains(&"1 75 25".to_string()));
+    }
+
+    #[test]
+    fn disconnecting_removes_the_square_from_list() {
+        let address = start_server();
+
+        let client_a = TcpStream::connect(address).unwrap();
+        let mut reader_a = BufReader::new(client_a); // un seul handle sur le socket de A
+        assert_eq!(read_line(&mut reader_a), "ID 0");
+        drop(reader_a); // ferme reellement la connexion (pas de clone qui la garderait ouverte)
+
+        // Le serveur ne détecte la déconnexion qu'en essayant de lire sur le
+        // socket fermé, dans son propre thread : on retente jusqu'à ce que
+        // LIST ne renvoie plus le carré 0.
+        for _ in 0..50 {
+            let mut client_b = TcpStream::connect(address).unwrap();
+            let mut reader_b = BufReader::new(client_b.try_clone().unwrap());
+            read_line(&mut reader_b); // "ID <n>"
+
+            writeln!(client_b, "LIST").unwrap();
+            let mut lines = Vec::new();
+            loop {
+                let line = read_line(&mut reader_b);
+                if line == "END" {
+                    break;
+                }
+                lines.push(line);
+            }
+
+            if lines.iter().all(|line| !line.starts_with("0 ")) {
+                return;
+            }
+            thread::sleep(std::time::Duration::from_millis(20));
+        }
+
+        panic!("le carre du client deconnecte est toujours dans LIST");
     }
 }
