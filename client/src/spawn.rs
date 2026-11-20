@@ -1,5 +1,8 @@
+use std::sync::mpsc::{Receiver, TryRecvError};
+
 use crate::entity::{Color, Entity};
 use crate::interpolation::Interpolation;
+use crate::network::NetEvent;
 use crate::shapes::Rect;
 use common::{Position, SIZE};
 
@@ -68,5 +71,35 @@ pub fn sync_with_server(
                 interpolations.push(Interpolation::at(position));
             }
         }
+    }
+}
+
+/// Applique les `NetEvent` déjà arrivés. Renvoie `false` si le thread réseau
+/// a disparu (connexion perdue) : on arrête alors de le solliciter pour le
+/// reste de la partie, plutôt que de continuer comme si de rien n'était.
+pub fn apply_network_events(
+    events: &Receiver<NetEvent>,
+    entities: &mut Vec<Entity>,
+    ids: &mut Vec<usize>,
+    interpolations: &mut Vec<Interpolation>,
+) -> bool {
+    loop {
+        match events.try_recv() {
+            Ok(NetEvent::Moved(position)) => entities[0].set_position(position),
+            Ok(NetEvent::List(squares)) => sync_with_server(entities, ids, interpolations, &squares),
+            Err(TryRecvError::Empty) => return true,
+            Err(TryRecvError::Disconnected) => {
+                eprintln!("Connexion au serveur perdue : on continue hors-ligne.");
+                return false;
+            }
+        }
+    }
+}
+
+/// Avance l'interpolation des entités distantes (toutes sauf la nôtre, à l'indice 0).
+pub fn advance_remote_entities(entities: &mut [Entity], interpolations: &mut [Interpolation], step: f64) {
+    for (entity, interpolation) in entities.iter_mut().zip(interpolations.iter_mut()).skip(1) {
+        interpolation.advance(step);
+        entity.set_position(interpolation.current());
     }
 }

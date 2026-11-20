@@ -106,3 +106,17 @@ impl Entity {
         self.position = position;
     }
 }
+
+/// Simule notre carré (`entities[0]`) sur `dt` secondes ; renvoie sa
+/// nouvelle position si elle a changé (à transmettre au serveur).
+pub fn simulate_local(entities: &mut [Entity], bounds: (f64, f64), dt: f64) -> Option<Position> {
+    let before = entities[0].position();
+    let others: Vec<(Position, &dyn Shape)> = entities[1..]
+        .iter()
+        .map(|other| (other.position(), other.shape()))
+        .collect();
+    let after = entities[0].resolve_movement(dt, bounds, &others);
+    entities[0].set_position(after);
+
+    (after != before).then_some(after)
+}
