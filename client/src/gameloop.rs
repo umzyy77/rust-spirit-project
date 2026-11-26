@@ -60,7 +60,7 @@ pub fn run(
                 }
 
                 frame += 1;
-                if frame % LIST_POLL_INTERVAL == 0 {
+                if frame.is_multiple_of(LIST_POLL_INTERVAL) {
                     let _ = commands.send(Command::RequestList);
                 }
             }

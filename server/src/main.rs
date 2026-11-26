@@ -21,6 +21,13 @@ type Squares = Arc<Mutex<Vec<Option<Square>>>>;
 
 const ADDRESS: &str = "127.0.0.1:7878";
 
+/// Limite de joueurs simultanés : sans elle, une rafale de connexions
+/// ouvrirait un thread par client sans borne (le risque d'épuisement des
+/// ressources contre lequel le chapitre 21.2 du Rust book protège avec un
+/// `ThreadPool` — inadapté ici, nos connexions sont longues, pas des
+/// requêtes courtes ; limiter le nombre de joueurs est la bonne équivalence).
+const MAX_PLAYERS: usize = 16;
+
 /// Au-delà de ce délai sans message, un client est considéré déconnecté.
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(5);
 /// Fréquence à laquelle on vérifie les clients inactifs.
@@ -55,6 +62,11 @@ fn run(listener: TcpListener, squares: Squares) {
             eprintln!("Impossible de desactiver Nagle : {err}");
         }
 
+        if squares.lock().unwrap().iter().flatten().count() >= MAX_PLAYERS {
+            eprintln!("Serveur plein (max {MAX_PLAYERS} joueurs) : connexion refusee.");
+            continue; // `stream` est abandonné ici, ce qui ferme la connexion
+        }
+
         let squares = Arc::clone(&squares);
         thread::spawn(move || handle_client(stream, squares));
     }
@@ -69,9 +81,7 @@ fn reap_stale_clients(squares: Squares) {
 
         let mut squares = squares.lock().unwrap();
         for slot in squares.iter_mut() {
-            if slot.is_some_and(|square| square.last_seen.elapsed() > CLIENT_TIMEOUT) {
-                *slot = None;
-            }
+            slot.take_if(|square| square.last_seen.elapsed() > CLIENT_TIMEOUT);
         }
     }
 }
@@ -345,5 +355,25 @@ mod tests {
         }
 
         panic!("le carre du client deconnecte est toujours dans LIST");
+    }
+
+    #[test]
+    fn rejects_connections_beyond_max_players() {
+        let address = start_server();
+
+        // Gardées ouvertes : sinon leur slot se libérerait et la limite ne serait jamais atteinte.
+        let mut clients = Vec::new();
+        for i in 0..MAX_PLAYERS {
+            let client = TcpStream::connect(address).unwrap();
+            let mut reader = BufReader::new(client.try_clone().unwrap());
+            assert_eq!(read_line(&mut reader), format!("ID {i}"));
+            clients.push(client);
+        }
+
+        let one_too_many = TcpStream::connect(address).unwrap();
+        let mut reader = BufReader::new(one_too_many);
+        let mut line = String::new();
+        let bytes_read = reader.read_line(&mut line).unwrap();
+        assert_eq!(bytes_read, 0, "le serveur aurait du fermer la connexion en trop, pas repondre \"{line}\"");
     }
 }
